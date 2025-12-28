@@ -202,6 +202,23 @@ body {
   font-weight: 600;
   color: var(--primary-color);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.streak-count.streak-active {
+  color: var(--success-color);
+}
+
+.streak-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: var(--success-color);
+  color: white;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  white-space: nowrap;
 }
 
 .streak-actions {
