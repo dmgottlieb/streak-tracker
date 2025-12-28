@@ -42,7 +42,10 @@ export default function StreakItem({ streak, onOpenCalendar }) {
           <span className="streak-name">{streak.name}</span>
         </label>
         <div className="streak-info">
-          <span className="streak-count">{streak.currentStreak} days</span>
+          <span className={`streak-count ${isCheckedToday ? 'streak-active' : ''}`}>
+            {streak.currentStreak} days
+            {isCheckedToday && <span className="streak-badge">✓ Today</span>}
+          </span>
         </div>
       </div>
       <div className="streak-actions">
