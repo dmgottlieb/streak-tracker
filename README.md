@@ -79,17 +79,29 @@ npm install
    rules_version = '2';
    service cloud.firestore {
      match /databases/{database}/documents {
-       // Only authenticated users can read/write their own streaks
        match /streaks/{streakId} {
-         allow read, write: if request.auth != null &&
-                               request.resource.data.userId == request.auth.uid;
-         allow read: if request.auth != null &&
-                        resource.data.userId == request.auth.uid;
+         // Allow read if authenticated and user owns the streak
+         allow read: if request.auth != null
+                     && resource.data.userId == request.auth.uid;
+
+         // Allow create if authenticated and setting correct userId
+         allow create: if request.auth != null
+                       && request.resource.data.userId == request.auth.uid;
+
+         // Allow update if authenticated and user owns the streak
+         allow update: if request.auth != null
+                       && resource.data.userId == request.auth.uid;
+
+         // Allow delete if authenticated and user owns the streak
+         allow delete: if request.auth != null
+                       && resource.data.userId == request.auth.uid;
        }
      }
    }
    ```
 3. Click **Publish**
+
+   **Note:** See `FIRESTORE_RULES.md` for detailed explanation of these rules.
 
 ### 5. Run Development Server
 

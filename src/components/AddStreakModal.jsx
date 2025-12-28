@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { formatDate } from '../utils/dateUtils';
+import { formatDate, getDateRange, getTodayString } from '../utils/dateUtils';
 import { createStreak } from '../services/streakService';
 
 export default function AddStreakModal({ userId, onClose }) {
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(formatDate(new Date()));
+  const [autoPopulate, setAutoPopulate] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -13,10 +14,23 @@ export default function AddStreakModal({ userId, onClose }) {
 
     setLoading(true);
     try {
+      // Generate completions if auto-populate is enabled and start date is in the past
+      const completions = {};
+      if (autoPopulate && startDate < getTodayString()) {
+        const dates = getDateRange(startDate, getTodayString());
+        dates.forEach(date => {
+          completions[date] = {
+            completed: true,
+            note: '',
+            timestamp: new Date()
+          };
+        });
+      }
+
       await createStreak(userId, {
         name: name.trim(),
         startDate,
-        completions: {}
+        completions
       });
       onClose();
     } catch (error) {
@@ -59,6 +73,19 @@ export default function AddStreakModal({ userId, onClose }) {
               required
             />
           </div>
+          {startDate < getTodayString() && (
+            <div className="form-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={autoPopulate}
+                  onChange={(e) => setAutoPopulate(e.target.checked)}
+                  className="checkbox"
+                />
+                <span>Mark all past days as complete (from {startDate} to today)</span>
+              </label>
+            </div>
+          )}
           <div className="modal-footer">
             <button type="button" onClick={onClose} className="btn btn-secondary">
               Cancel
