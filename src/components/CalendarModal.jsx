@@ -6,6 +6,8 @@ export default function CalendarModal({ streak, onClose }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [editingDate, setEditingDate] = useState(null);
   const [editNote, setEditNote] = useState('');
+  // Local completions state so the calendar updates immediately on edit
+  const [completions, setCompletions] = useState(streak.completions || {});
 
   const weeks = getCalendarDays(currentMonth);
   const today = getTodayString();
@@ -21,19 +23,29 @@ export default function CalendarModal({ streak, onClose }) {
   const handleDayClick = (date) => {
     if (!date) return;
     const dateStr = formatDate(date);
-    const completion = streak.completions?.[dateStr];
     setEditingDate(dateStr);
-    setEditNote(completion?.note || '');
+    setEditNote(completions[dateStr]?.note || '');
   };
 
   const handleSaveEdit = async (completed) => {
     if (!editingDate) return;
 
+    // Update local state immediately so the calendar reflects the change
+    setCompletions(prev => ({
+      ...prev,
+      [editingDate]: { completed, note: editNote }
+    }));
+    setEditingDate(null);
+    setEditNote('');
+
     try {
       await updateStreakCompletion(streak.id, editingDate, completed, editNote);
-      setEditingDate(null);
-      setEditNote('');
     } catch (error) {
+      // Roll back local state if the server update fails
+      setCompletions(prev => ({
+        ...prev,
+        [editingDate]: streak.completions?.[editingDate] || { completed: false, note: '' }
+      }));
       console.error('Error updating completion:', error);
       alert('Failed to update. Please try again.');
     }
@@ -43,16 +55,17 @@ export default function CalendarModal({ streak, onClose }) {
     if (!date) return <div className="calendar-day empty"></div>;
 
     const dateStr = formatDate(date);
-    const completion = streak.completions?.[dateStr];
+    const completion = completions[dateStr];
     const isCompleted = completion?.completed;
     const isToday = dateStr === today;
-    const startDate = streak.startDate;
-    const isBeforeStart = dateStr < startDate;
+    const isBeforeStart = dateStr < streak.startDate;
+    const isEditing = dateStr === editingDate;
 
     let className = 'calendar-day';
     if (isCompleted) className += ' completed';
     if (isToday) className += ' today';
     if (isBeforeStart) className += ' disabled';
+    if (isEditing) className += ' editing';
 
     return (
       <div
@@ -104,47 +117,44 @@ export default function CalendarModal({ streak, onClose }) {
             </div>
           </div>
 
-          {editingDate && (
-            <div className="edit-panel">
-              <h4>Edit {editingDate}</h4>
-              <div className="form-group">
-                <label htmlFor="note">Note (optional)</label>
-                <textarea
-                  id="note"
-                  value={editNote}
-                  onChange={(e) => setEditNote(e.target.value)}
-                  placeholder="Add a note about this day..."
-                  className="input textarea"
-                  rows="3"
-                />
-              </div>
-              <div className="edit-actions">
-                <button
-                  onClick={() => handleSaveEdit(true)}
-                  className="btn btn-primary"
-                >
-                  ✓ Mark Complete
-                </button>
-                <button
-                  onClick={() => handleSaveEdit(false)}
-                  className="btn btn-secondary"
-                >
-                  ✗ Mark Incomplete
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingDate(null);
-                    setEditNote('');
-                  }}
-                  className="btn btn-secondary"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+          {/* Edit panel is always rendered to prevent layout shifts */}
+          <div className="edit-panel">
+            {editingDate ? (
+              <>
+                <h4>Edit {editingDate}</h4>
+                <div className="form-group">
+                  <label htmlFor="note">Note (optional)</label>
+                  <textarea
+                    id="note"
+                    value={editNote}
+                    onChange={(e) => setEditNote(e.target.value)}
+                    placeholder="Add a note about this day..."
+                    className="input textarea"
+                    rows="3"
+                  />
+                </div>
+                <div className="edit-actions">
+                  <button onClick={() => handleSaveEdit(true)} className="btn btn-primary">
+                    ✓ Mark Complete
+                  </button>
+                  <button onClick={() => handleSaveEdit(false)} className="btn btn-secondary">
+                    ✗ Mark Incomplete
+                  </button>
+                  <button
+                    onClick={() => { setEditingDate(null); setEditNote(''); }}
+                    className="btn btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="edit-hint">Click any day to mark it complete or add a note.</p>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
