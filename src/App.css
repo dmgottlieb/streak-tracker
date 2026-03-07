@@ -202,6 +202,23 @@ body {
   font-weight: 600;
   color: var(--primary-color);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.streak-count.streak-active {
+  color: var(--success-color);
+}
+
+.streak-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: var(--success-color);
+  color: white;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  white-space: nowrap;
 }
 
 .streak-actions {
@@ -452,9 +469,10 @@ body {
 
 /* Edit Panel */
 .edit-panel {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--border);
+  min-height: 10rem;
 }
 
 .edit-panel h4 {
@@ -462,11 +480,23 @@ body {
   font-size: 1.125rem;
 }
 
+.edit-hint {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-style: italic;
+  margin: 0;
+}
+
 .edit-actions {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
   margin-top: 1rem;
+}
+
+.calendar-day.editing {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 1px;
 }
 
 /* Responsive */

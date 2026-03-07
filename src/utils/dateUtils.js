@@ -21,8 +21,8 @@ export const parseDate = (dateString) => {
 // Get all dates from startDate to endDate (inclusive)
 export const getDateRange = (startDate, endDate) => {
   const dates = [];
-  const current = new Date(startDate);
-  const end = new Date(endDate);
+  const current = parseDate(startDate);
+  const end = parseDate(endDate);
 
   while (current <= end) {
     dates.push(formatDate(current));
@@ -39,11 +39,20 @@ export const calculateStreak = (completions, startDate) => {
   const todayDate = parseDate(today);
 
   // Get all dates from start to today
-  const allDates = getDateRange(start, todayDate);
+  const allDates = getDateRange(startDate, today);
 
   // Calculate streak from the end (most recent)
+  // Start from yesterday if today is not complete (today doesn't break the streak)
   let streak = 0;
-  for (let i = allDates.length - 1; i >= 0; i--) {
+  let startIndex = allDates.length - 1;
+
+  // If today is not completed, start counting from yesterday
+  if (!completions[today]?.completed && allDates[startIndex] === today) {
+    startIndex--;
+  }
+
+  // Count backwards from the start index
+  for (let i = startIndex; i >= 0; i--) {
     const date = allDates[i];
     if (completions[date]?.completed) {
       streak++;
