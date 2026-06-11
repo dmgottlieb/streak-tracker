@@ -12,6 +12,14 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
+    # The Firebase Hosting action needs these permissions to create check
+    # runs and comment preview URLs on PRs. Without checks:write, the action
+    # fails with "Resource not accessible by integration" (HTTP 403).
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
