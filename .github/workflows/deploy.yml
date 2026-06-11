@@ -45,11 +45,17 @@ jobs:
 
       - name: Create Firebase config
         run: |
+          if [ -z "${{ secrets.VITE_FIREBASE_PROJECT_ID }}" ]; then
+            echo "Error: VITE_FIREBASE_PROJECT_ID secret is not set"
+            exit 1
+          fi
           echo '{
             "projects": {
               "default": "${{ secrets.VITE_FIREBASE_PROJECT_ID }}"
             }
           }' > .firebaserc
+          echo "Created .firebaserc with project: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}"
+          cat .firebaserc
 
       - name: Deploy to Firebase Hosting
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
