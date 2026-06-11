@@ -12,10 +12,12 @@ export default defineConfig({
       manifest: {
         name: 'Streak Tracker',
         short_name: 'Streaks',
-        description: 'Track your daily habits and streaks',
+        description: 'Track your daily habits and build lasting streaks',
         theme_color: '#4F46E5',
         background_color: '#ffffff',
         display: 'standalone',
+        start_url: '/',
+        scope: '/',
         icons: [
           {
             src: 'pwa-192x192.png',
