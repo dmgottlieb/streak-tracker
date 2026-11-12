@@ -59,6 +59,17 @@ export const updateStreakCompletion = async (streakId, date, completed, note = '
   });
 };
 
+// Update several dates' completions in one write.
+// updates: { 'YYYY-MM-DD': { completed, note } }
+export const updateStreakCompletions = async (streakId, updates) => {
+  const streakRef = doc(db, STREAKS_COLLECTION, streakId);
+  const fields = {};
+  for (const [date, { completed, note = '' }] of Object.entries(updates)) {
+    fields[`completions.${date}`] = { completed, note, timestamp: serverTimestamp() };
+  }
+  await updateDoc(streakRef, fields);
+};
+
 // Update streak name
 export const updateStreakName = async (streakId, newName) => {
   const streakRef = doc(db, STREAKS_COLLECTION, streakId);

@@ -1,88 +1,170 @@
 import { useState } from 'react';
-import { getCalendarDays, getMonthYear, formatDate, getTodayString } from '../utils/dateUtils';
-import { updateStreakCompletion } from '../services/streakService';
+import { getCalendarDays, getMonthYear, formatDate, parseDate, getTodayString } from '../utils/dateUtils';
+import { updateStreakCompletions } from '../services/streakService';
+
+// Always render 6 week rows so the grid height doesn't change between months.
+const padToSixWeeks = (weeks) => {
+  const padded = [...weeks];
+  while (padded.length < 6) padded.push(new Array(7).fill(null));
+  return padded;
+};
+
+const shortDate = (dateStr) =>
+  parseDate(dateStr).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
 export default function CalendarModal({ streak, onClose }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [editingDate, setEditingDate] = useState(null);
-  const [editNote, setEditNote] = useState('');
+  const [selected, setSelected] = useState(() => new Set());
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
   // Local completions state so the calendar updates immediately on edit
   const [completions, setCompletions] = useState(streak.completions || {});
 
-  const weeks = getCalendarDays(currentMonth);
+  const weeks = padToSixWeeks(getCalendarDays(currentMonth));
   const today = getTodayString();
+  const selectedDates = [...selected].sort();
+  const anyComplete = selectedDates.some(d => completions[d]?.completed);
+  const anyIncomplete = selectedDates.some(d => !completions[d]?.completed);
 
-  const handlePrevMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+  const changeMonth = (delta) => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1));
   };
 
-  const handleNextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  const clearSelection = () => {
+    setSelected(new Set());
+    setEditingNote(false);
   };
 
-  const handleDayClick = (date) => {
-    if (!date) return;
-    const dateStr = formatDate(date);
-    setEditingDate(dateStr);
-    setEditNote(completions[dateStr]?.note || '');
+  const toggleDay = (dateStr) => {
+    setEditingNote(false);
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(dateStr)) next.delete(dateStr);
+      else next.add(dateStr);
+      return next;
+    });
   };
 
-  const handleSaveEdit = async (completed) => {
-    if (!editingDate) return;
-
-    // Update local state immediately so the calendar reflects the change
-    setCompletions(prev => ({
-      ...prev,
-      [editingDate]: { completed, note: editNote }
-    }));
-    setEditingDate(null);
-    setEditNote('');
-
+  // Apply updates locally right away, persist, and roll back on failure.
+  const save = async (updates) => {
+    const previous = completions;
+    setCompletions(prev => ({ ...prev, ...updates }));
+    clearSelection();
     try {
-      await updateStreakCompletion(streak.id, editingDate, completed, editNote);
+      await updateStreakCompletions(streak.id, updates);
     } catch (error) {
-      // Roll back local state if the server update fails
-      setCompletions(prev => ({
-        ...prev,
-        [editingDate]: streak.completions?.[editingDate] || { completed: false, note: '' }
-      }));
-      console.error('Error updating completion:', error);
+      setCompletions(previous);
+      console.error('Error updating completions:', error);
       alert('Failed to update. Please try again.');
     }
   };
 
-  const renderDay = (date) => {
-    if (!date) return <div className="calendar-day empty"></div>;
+  const markSelected = (completed) => {
+    const updates = {};
+    for (const d of selectedDates) {
+      updates[d] = { completed, note: completions[d]?.note || '' };
+    }
+    save(updates);
+  };
+
+  const startNote = () => {
+    setNoteDraft(completions[selectedDates[0]]?.note || '');
+    setEditingNote(true);
+  };
+
+  const saveNote = () => {
+    const d = selectedDates[0];
+    save({ [d]: { completed: !!completions[d]?.completed, note: noteDraft.trim() } });
+  };
+
+  const renderDay = (date, key) => {
+    if (!date) return <div key={key} className="calendar-day empty"></div>;
 
     const dateStr = formatDate(date);
     const completion = completions[dateStr];
-    const isCompleted = completion?.completed;
-    const isToday = dateStr === today;
     const isBeforeStart = dateStr < streak.startDate;
-    const isEditing = dateStr === editingDate;
 
     let className = 'calendar-day';
-    if (isCompleted) className += ' completed';
-    if (isToday) className += ' today';
+    if (completion?.completed) className += ' completed';
+    if (dateStr === today) className += ' today';
     if (isBeforeStart) className += ' disabled';
-    if (isEditing) className += ' editing';
+    if (selected.has(dateStr)) className += ' selected';
 
     return (
       <div
-        key={dateStr}
+        key={key}
         className={className}
-        onClick={() => !isBeforeStart && handleDayClick(date)}
+        onClick={() => !isBeforeStart && toggleDay(dateStr)}
         title={completion?.note || ''}
       >
         <span className="day-number">{date.getDate()}</span>
-        {isCompleted && <span className="check-mark">✓</span>}
+        {completion?.completed && <span className="check-mark">✓</span>}
         {completion?.note && <span className="note-indicator">📝</span>}
       </div>
     );
   };
 
+  const renderActionBar = () => {
+    if (editingNote) {
+      return (
+        <>
+          <input
+            type="text"
+            className="input"
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && saveNote()}
+            placeholder={`Note for ${shortDate(selectedDates[0])}`}
+            autoFocus
+          />
+          <div className="action-buttons">
+            <button onClick={saveNote} className="btn btn-primary">Save note</button>
+            <button onClick={() => setEditingNote(false)} className="btn btn-secondary">Cancel</button>
+          </div>
+        </>
+      );
+    }
+
+    if (selectedDates.length === 0) {
+      return (
+        <p className="action-status hint">
+          Tap days to select them, then mark them complete or incomplete.
+        </p>
+      );
+    }
+
+    const single = selectedDates.length === 1;
+    const note = single ? completions[selectedDates[0]]?.note : '';
+    return (
+      <>
+        <p className="action-status">
+          <strong>{single ? shortDate(selectedDates[0]) : `${selectedDates.length} days selected`}</strong>
+          {note && <span className="action-note"> — {note}</span>}
+        </p>
+        <div className="action-buttons">
+          {anyIncomplete && (
+            <button onClick={() => markSelected(true)} className="btn btn-primary">
+              ✓ {anyComplete ? 'All complete' : 'Complete'}
+            </button>
+          )}
+          {anyComplete && (
+            <button onClick={() => markSelected(false)} className="btn btn-secondary">
+              ✗ {anyIncomplete ? 'All incomplete' : 'Incomplete'}
+            </button>
+          )}
+          {single && (
+            <button onClick={startNote} className="btn btn-secondary">
+              📝 Note
+            </button>
+          )}
+          <button onClick={clearSelection} className="btn btn-secondary">Clear</button>
+        </div>
+      </>
+    );
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay calendar-overlay" onClick={onClose}>
       <div className="modal calendar-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{streak.name}</h2>
@@ -90,9 +172,9 @@ export default function CalendarModal({ streak, onClose }) {
         </div>
         <div className="modal-body">
           <div className="calendar-header">
-            <button onClick={handlePrevMonth} className="btn btn-small">←</button>
+            <button onClick={() => changeMonth(-1)} className="btn btn-small">←</button>
             <h3>{getMonthYear(currentMonth)}</h3>
-            <button onClick={handleNextMonth} className="btn btn-small">→</button>
+            <button onClick={() => changeMonth(1)} className="btn btn-small">→</button>
           </div>
           <div className="calendar">
             <div className="calendar-weekdays">
@@ -107,54 +189,16 @@ export default function CalendarModal({ streak, onClose }) {
             <div className="calendar-weeks">
               {weeks.map((week, i) => (
                 <div key={i} className="calendar-week">
-                  {week.map((day, j) => (
-                    <div key={j}>
-                      {renderDay(day)}
-                    </div>
-                  ))}
+                  {week.map((day, j) => renderDay(day, j))}
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Edit panel is always rendered to prevent layout shifts */}
-          <div className="edit-panel">
-            {editingDate ? (
-              <>
-                <h4>Edit {editingDate}</h4>
-                <div className="form-group">
-                  <label htmlFor="note">Note (optional)</label>
-                  <textarea
-                    id="note"
-                    value={editNote}
-                    onChange={(e) => setEditNote(e.target.value)}
-                    placeholder="Add a note about this day..."
-                    className="input textarea"
-                    rows="3"
-                  />
-                </div>
-                <div className="edit-actions">
-                  <button onClick={() => handleSaveEdit(true)} className="btn btn-primary">
-                    ✓ Mark Complete
-                  </button>
-                  <button onClick={() => handleSaveEdit(false)} className="btn btn-secondary">
-                    ✗ Mark Incomplete
-                  </button>
-                  <button
-                    onClick={() => { setEditingDate(null); setEditNote(''); }}
-                    className="btn btn-secondary"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="edit-hint">Click any day to mark it complete or add a note.</p>
-            )}
-          </div>
+          {/* Fixed-height action bar: its contents change, its size never does */}
+          <div className="action-bar">{renderActionBar()}</div>
         </div>
       </div>
     </div>
   );
 }
-
