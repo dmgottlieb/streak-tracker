@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { getCalendarDays, getMonthYear, formatDate, parseDate, getTodayString } from '../utils/dateUtils';
-import { goalOf, countOf, isDayDone, calculateStreak, computeStats } from '../utils/streakUtils';
+import { goalOf, dayGoalOf, countOf, isDayDone, isWeekly, weekStartOf, weekTotal, calculateStreak, computeStats } from '../utils/streakUtils';
 import { updateStreakCompletions } from '../services/streakService';
 
 // Always render 6 week rows so the grid height doesn't change between months.
@@ -26,9 +26,12 @@ export default function CalendarModal({ streak, onClose }) {
   const weeks = padToSixWeeks(getCalendarDays(currentMonth));
   const today = getTodayString();
   const goal = goalOf(streak);
+  const dayGoal = dayGoalOf(streak);
+  const weekly = isWeekly(streak);
+  const unit = weekly ? 'w' : 'd';
   const liveStreak = { ...streak, completions };
   const selectedDates = [...selected].sort();
-  const countDraft = countEdit ?? (selectedDates.length === 1 ? countOf(completions[selectedDates[0]]) : goal);
+  const countDraft = countEdit ?? (selectedDates.length === 1 ? countOf(completions[selectedDates[0]]) : dayGoal);
   const anyComplete = selectedDates.some(d => completions[d]?.completed);
   const anyIncomplete = selectedDates.some(d => !completions[d]?.completed);
 
@@ -83,7 +86,7 @@ export default function CalendarModal({ streak, onClose }) {
   const setSelectedCounts = () => {
     const updates = {};
     for (const d of selectedDates) {
-      updates[d] = { count: countDraft, completed: countDraft >= goal };
+      updates[d] = { count: countDraft, completed: countDraft >= dayGoal };
     }
     save(updates);
   };
@@ -98,6 +101,13 @@ export default function CalendarModal({ streak, onClose }) {
     save({ [d]: { note: noteDraft.trim() } });
   };
 
+  // Weekly streaks: a week whose total reaches the goal gets a box around its row.
+  const weekMet = (week) => {
+    if (!weekly) return false;
+    const first = week.find(Boolean);
+    return !!first && weekTotal(streak, weekStartOf(formatDate(first)), completions) >= goal;
+  };
+
   const renderDay = (date, key) => {
     if (!date) return <div key={key} className="calendar-day empty"></div>;
 
@@ -110,7 +120,7 @@ export default function CalendarModal({ streak, onClose }) {
     let className = 'calendar-day';
     if (done) className += ' completed';
     if (streak.multi && !done && count > 0) className += ' partial';
-    if (streak.multi && count > goal) className += ' extra';
+    if (streak.multi && count > dayGoal) className += ' extra';
     if (dateStr === today) className += ' today';
     if (isBeforeStart) className += ' disabled';
     if (selected.has(dateStr)) className += ' selected';
@@ -139,14 +149,14 @@ export default function CalendarModal({ streak, onClose }) {
       <div className="stats">
         <p className="stats-line">
           <strong>{stats.total}</strong> {streak.multi ? 'total' : 'days done'}
-          {' · '}Current <strong>{current}d</strong>
-          {' · '}Best <strong>{stats.longest}d</strong>
+          {' · '}Current <strong>{current}{unit}</strong>
+          {' · '}Best <strong>{stats.longest}{unit}</strong>
         </p>
-        {streak.multi && stats.thresholds.length > 0 && (
+        {(streak.multi || weekly) && stats.thresholds.length > 0 && (
           <p className="stats-line secondary">
             Longest at{' '}
-            {stats.thresholds.map(({ k, days }, i) => (
-              <span key={k}>{i > 0 && ' · '}≥{k} <strong>{days}d</strong></span>
+            {stats.thresholds.map(({ k, periods }, i) => (
+              <span key={k}>{i > 0 && ' · '}≥{k} <strong>{periods}{unit}</strong></span>
             ))}
           </p>
         )}
@@ -185,7 +195,9 @@ export default function CalendarModal({ streak, onClose }) {
         <p className="action-status">
           <strong>{single ? shortDate(selectedDates[0]) : `${selectedDates.length} days selected`}</strong>
           {streak.multi && single && (
-            <span className="action-note"> — {countOf(completions[selectedDates[0]])}/{goal}</span>
+            <span className="action-note">
+              {' — '}{weekly ? `×${countOf(completions[selectedDates[0]])}` : `${countOf(completions[selectedDates[0]])}/${goal}`}
+            </span>
           )}
           {note && <span className="action-note"> — {note}</span>}
         </p>
@@ -246,7 +258,7 @@ export default function CalendarModal({ streak, onClose }) {
             </div>
             <div className="calendar-weeks">
               {weeks.map((week, i) => (
-                <div key={i} className="calendar-week">
+                <div key={i} className={`calendar-week ${weekMet(week) ? 'week-met' : ''}`}>
                   {week.map((day, j) => renderDay(day, j))}
                 </div>
               ))}

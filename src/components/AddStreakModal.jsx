@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatDate, getDateRange, getTodayString } from '../utils/dateUtils';
 import { createStreak, updateStreakSettings } from '../services/streakService';
+import { goalOf, dayGoalOf, periodOf } from '../utils/streakUtils';
 
 // Creates a streak, or edits one when `streak` is given.
 export default function AddStreakModal({ userId, streak, onClose }) {
@@ -10,9 +11,17 @@ export default function AddStreakModal({ userId, streak, onClose }) {
   const [autoPopulate, setAutoPopulate] = useState(true);
   const [multi, setMulti] = useState(!!streak?.multi);
   const [goalInput, setGoalInput] = useState(String(streak?.goal || 1));
+  const [period, setPeriod] = useState(streak ? periodOf(streak) : 'day');
   const [loading, setLoading] = useState(false);
 
-  const goal = Math.min(99, Math.max(1, parseInt(goalInput, 10) || 1));
+  const weekly = period === 'week';
+  // Once-a-day daily streaks have no goal to choose; once-a-day weekly ones top out at 7.
+  const hasGoal = multi || weekly;
+  const maxGoal = !multi && weekly ? 7 : 99;
+  const goal = hasGoal ? Math.min(maxGoal, Math.max(1, parseInt(goalInput, 10) || 1)) : 1;
+  const settings = { multi, goal, period };
+  const dayGoal = dayGoalOf(settings);
+  const goalChanged = editing && (goal !== goalOf(streak) || period !== periodOf(streak));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,7 +30,7 @@ export default function AddStreakModal({ userId, streak, onClose }) {
     setLoading(true);
     try {
       if (editing) {
-        await updateStreakSettings(streak, { name: name.trim(), multi, goal: multi ? goal : 1 });
+        await updateStreakSettings(streak, { name: name.trim(), ...settings });
       } else {
         // Generate completions if auto-populate is enabled and start date is in the past
         const completions = {};
@@ -30,7 +39,7 @@ export default function AddStreakModal({ userId, streak, onClose }) {
             completions[date] = {
               completed: true,
               note: '',
-              ...(multi && { count: goal }),
+              ...(multi && { count: dayGoal }),
               timestamp: new Date()
             };
           });
@@ -40,8 +49,7 @@ export default function AddStreakModal({ userId, streak, onClose }) {
           name: name.trim(),
           startDate,
           completions,
-          multi,
-          goal: multi ? goal : 1
+          ...settings
         });
       }
       onClose();
@@ -98,22 +106,37 @@ export default function AddStreakModal({ userId, streak, onClose }) {
               <span>Can be done more than once a day</span>
             </label>
           </div>
-          {multi && (
-            <div className="form-group">
-              <label htmlFor="streak-goal">Daily goal (times per day for a day to count)</label>
-              <input
-                id="streak-goal"
-                type="number"
-                inputMode="numeric"
-                min="1"
-                max="99"
-                value={goalInput}
-                onChange={(e) => setGoalInput(e.target.value)}
-                onBlur={() => setGoalInput(String(goal))}
-                className="input goal-input"
-              />
+          <div className="form-group">
+            <label htmlFor="streak-period">Goal</label>
+            <div className="goal-row">
+              {hasGoal ? (
+                <input
+                  id="streak-goal"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max={maxGoal}
+                  value={goalInput}
+                  onChange={(e) => setGoalInput(e.target.value)}
+                  onBlur={() => setGoalInput(String(goal))}
+                  className="input goal-input"
+                  aria-label="Goal"
+                />
+              ) : (
+                <span>Once</span>
+              )}
+              <span>{hasGoal ? (goal === 1 ? 'time per' : 'times per') : 'per'}</span>
+              <select
+                id="streak-period"
+                value={period}
+                onChange={(e) => setPeriod(e.target.value)}
+                className="input period-select"
+              >
+                <option value="day">day</option>
+                <option value="week">week</option>
+              </select>
             </div>
-          )}
+          </div>
           {!editing && startDate < getTodayString() && (
             <div className="form-group">
               <label className="checkbox-label">
@@ -125,17 +148,19 @@ export default function AddStreakModal({ userId, streak, onClose }) {
                 />
                 <span>
                   Mark all past days as complete (from {startDate} to today)
-                  {multi && goal > 1 && `, ${goal} times each`}
+                  {multi && dayGoal > 1 && `, ${dayGoal} times each`}
                 </span>
               </label>
             </div>
           )}
-          {editing && streak.multi && multi && goal !== (streak.goal || 1) && (
-            <p className="form-hint">Changing the goal recalculates which past days count toward the streak.</p>
-          )}
-          {editing && streak.multi && !multi && (
+          {goalChanged && (
             <p className="form-hint">
-              Days that reached the goal of {streak.goal || 1} stay complete. Counts are kept if you switch back.
+              Changing the goal recalculates which past {weekly ? 'weeks' : 'days'} count toward the streak.
+            </p>
+          )}
+          {editing && streak.multi && !multi && dayGoalOf(streak) > 1 && (
+            <p className="form-hint">
+              Days that reached {dayGoalOf(streak)} stay complete. Counts are kept if you switch back.
             </p>
           )}
           <div className="modal-footer">

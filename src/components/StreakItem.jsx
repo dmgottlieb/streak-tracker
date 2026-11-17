@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { getTodayString } from '../utils/dateUtils';
-import { goalOf, countOf, isDayDone } from '../utils/streakUtils';
+import { goalOf, dayGoalOf, countOf, isDayDone, isWeekly, weekStartOf, weekTotal } from '../utils/streakUtils';
 import { updateStreakCompletion, incrementStreakCount, deleteStreak } from '../services/streakService';
 
 export default function StreakItem({ streak, onOpenCalendar, onEdit }) {
@@ -8,8 +8,12 @@ export default function StreakItem({ streak, onOpenCalendar, onEdit }) {
   const today = getTodayString();
   const completion = streak.completions?.[today];
   const goal = goalOf(streak);
+  const weekly = isWeekly(streak);
   const count = countOf(completion);
   const doneToday = isDayDone(streak, completion);
+  // Progress shown in the badge, and whether the current period is met
+  const progress = weekly ? weekTotal(streak, weekStartOf(today)) : count;
+  const periodMet = weekly ? progress >= goal : doneToday;
 
   const handleToggle = async () => {
     setUpdating(true);
@@ -25,7 +29,7 @@ export default function StreakItem({ streak, onOpenCalendar, onEdit }) {
   // Not disabled while saving: increments are atomic, so fast taps all count.
   const handleStep = async (delta) => {
     try {
-      await incrementStreakCount(streak.id, today, delta, completion, goal);
+      await incrementStreakCount(streak.id, today, delta, completion, dayGoalOf(streak));
     } catch (error) {
       console.error('Error updating count:', error);
     }
@@ -42,6 +46,7 @@ export default function StreakItem({ streak, onOpenCalendar, onEdit }) {
   };
 
   const countState = doneToday ? 'done' : count > 0 ? 'partial' : '';
+  const showProgress = streak.multi || weekly;
 
   return (
     <div className="streak-item">
@@ -70,24 +75,26 @@ export default function StreakItem({ streak, onOpenCalendar, onEdit }) {
           </label>
         )}
         <div className="streak-info">
-          <span className={`streak-count ${doneToday ? 'streak-active' : ''}`}>
-            {streak.currentStreak} days
-            {!streak.multi && doneToday && <span className="streak-badge">✓ Today</span>}
+          <span className={`streak-count ${periodMet ? 'streak-active' : ''}`}>
+            {streak.currentStreak} {weekly ? 'week' : 'day'}{streak.currentStreak === 1 ? '' : 's'}
+            {!showProgress && doneToday && <span className="streak-badge">✓ Today</span>}
           </span>
-          {streak.multi && (
+          {showProgress && (
             <span className="today-progress">
               {/* Slot is always reserved so the row doesn't shift when it appears */}
-              <button
-                onClick={() => handleStep(-1)}
-                className="step-down"
-                style={{ visibility: count > 0 ? 'visible' : 'hidden' }}
-                disabled={count === 0}
-                aria-label={`Remove one from ${streak.name}`}
-              >
-                −
-              </button>
-              <span className={`streak-badge ${doneToday ? '' : 'pending'}`}>
-                {count}/{goal} today
+              {streak.multi && (
+                <button
+                  onClick={() => handleStep(-1)}
+                  className="step-down"
+                  style={{ visibility: count > 0 ? 'visible' : 'hidden' }}
+                  disabled={count === 0}
+                  aria-label={`Remove one from ${streak.name}`}
+                >
+                  −
+                </button>
+              )}
+              <span className={`streak-badge ${periodMet ? '' : 'pending'}`}>
+                {progress}/{goal} {weekly ? 'this wk' : 'today'}
               </span>
             </span>
           )}
