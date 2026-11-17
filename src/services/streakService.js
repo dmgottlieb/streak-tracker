@@ -12,7 +12,7 @@ import {
   increment
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { countOf } from '../utils/streakUtils';
+import { countOf, dayGoalOf } from '../utils/streakUtils';
 
 const STREAKS_COLLECTION = 'streaks';
 
@@ -44,6 +44,7 @@ export const createStreak = async (userId, streakData) => {
     completions: streakData.completions || {},
     multi: !!streakData.multi,
     goal: streakData.goal || 1,
+    period: streakData.period || 'day',
     createdAt: serverTimestamp()
   });
   return docRef.id;
@@ -83,17 +84,18 @@ export const incrementStreakCount = async (streakId, date, delta, completion, go
   });
 };
 
-// Rename, and switch between once-a-day and counted (with a goal).
+// Rename, switch between once-a-day and counted, change goal or period.
 // Rewrites each day so stored data stays consistent with the new settings:
 // - to counted: every day gets an explicit count (a done day becomes 1)
-// - goal change or back to once-a-day: `completed` = count reached the goal
-//   (when going back, the goal that was in effect)
-export const updateStreakSettings = async (streak, { name, multi, goal }) => {
+// - counted: `completed` = the day's count reached the new per-day goal
+// - back to once-a-day: `completed` = the count reached the per-day goal
+//   that was in effect, so the days that counted stay complete
+export const updateStreakSettings = async (streak, { name, multi, goal, period }) => {
   const streakRef = doc(db, STREAKS_COLLECTION, streak.id);
-  const fields = { name, multi, goal };
+  const fields = { name, multi, goal, period };
 
   if (multi || streak.multi) {
-    const doneAt = multi ? goal : Math.max(1, streak.goal || 1);
+    const doneAt = multi ? dayGoalOf({ multi, goal, period }) : dayGoalOf(streak);
     for (const [date, completion] of Object.entries(streak.completions || {})) {
       const count = countOf(completion);
       if (typeof completion.count !== 'number') fields[`completions.${date}.count`] = count;
