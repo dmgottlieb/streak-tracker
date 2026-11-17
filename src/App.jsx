@@ -12,6 +12,7 @@ function App() {
   const { streaks, loading: streaksLoading } = useStreaks(user?.uid);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedStreak, setSelectedStreak] = useState(null);
+  const [editingStreak, setEditingStreak] = useState(null);
 
   if (authLoading) {
     return (
@@ -64,6 +65,7 @@ function App() {
           <StreakList
             streaks={streaks}
             onOpenCalendar={setSelectedStreak}
+            onEditStreak={setEditingStreak}
             onAddStreak={() => setShowAddModal(true)}
           />
         )}
@@ -73,6 +75,14 @@ function App() {
         <AddStreakModal
           userId={user.uid}
           onClose={() => setShowAddModal(false)}
+        />
+      )}
+
+      {editingStreak && (
+        <AddStreakModal
+          userId={user.uid}
+          streak={editingStreak}
+          onClose={() => setEditingStreak(null)}
         />
       )}
 

@@ -32,38 +32,6 @@ export const getDateRange = (startDate, endDate) => {
   return dates;
 };
 
-// Calculate current streak from completions
-export const calculateStreak = (completions, startDate) => {
-  const today = getTodayString();
-  const start = parseDate(startDate);
-  const todayDate = parseDate(today);
-
-  // Get all dates from start to today
-  const allDates = getDateRange(startDate, today);
-
-  // Calculate streak from the end (most recent)
-  // Start from yesterday if today is not complete (today doesn't break the streak)
-  let streak = 0;
-  let startIndex = allDates.length - 1;
-
-  // If today is not completed, start counting from yesterday
-  if (!completions[today]?.completed && allDates[startIndex] === today) {
-    startIndex--;
-  }
-
-  // Count backwards from the start index
-  for (let i = startIndex; i >= 0; i--) {
-    const date = allDates[i];
-    if (completions[date]?.completed) {
-      streak++;
-    } else {
-      break;
-    }
-  }
-
-  return streak;
-};
-
 // Get the start of current month
 export const getMonthStart = (date = new Date()) => {
   return new Date(date.getFullYear(), date.getMonth(), 1);
