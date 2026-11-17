@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { subscribeToStreaks } from '../services/streakService';
-import { calculateStreak } from '../utils/dateUtils';
+import { calculateStreak } from '../utils/streakUtils';
 
 export const useStreaks = (userId) => {
   const [streaks, setStreaks] = useState([]);
@@ -17,7 +17,7 @@ export const useStreaks = (userId) => {
       // Calculate current streak for each streak
       const streaksWithCounts = streaksData.map(streak => ({
         ...streak,
-        currentStreak: calculateStreak(streak.completions || {}, streak.startDate)
+        currentStreak: calculateStreak(streak)
       }));
 
       setStreaks(streaksWithCounts);

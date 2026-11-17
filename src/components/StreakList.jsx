@@ -1,6 +1,6 @@
 import StreakItem from './StreakItem';
 
-export default function StreakList({ streaks, onOpenCalendar, onAddStreak }) {
+export default function StreakList({ streaks, onOpenCalendar, onEditStreak, onAddStreak }) {
   if (streaks.length === 0) {
     return (
       <div className="empty-state">
@@ -26,6 +26,7 @@ export default function StreakList({ streaks, onOpenCalendar, onAddStreak }) {
             key={streak.id}
             streak={streak}
             onOpenCalendar={onOpenCalendar}
+            onEdit={onEditStreak}
           />
         ))}
       </div>

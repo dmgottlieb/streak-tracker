@@ -8,9 +8,11 @@ import {
   query,
   where,
   onSnapshot,
-  serverTimestamp
+  serverTimestamp,
+  increment
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { countOf } from '../utils/streakUtils';
 
 const STREAKS_COLLECTION = 'streaks';
 
@@ -40,40 +42,65 @@ export const createStreak = async (userId, streakData) => {
     name: streakData.name,
     startDate: streakData.startDate,
     completions: streakData.completions || {},
+    multi: !!streakData.multi,
+    goal: streakData.goal || 1,
     createdAt: serverTimestamp()
   });
   return docRef.id;
 };
 
-// Update a streak's completion for a specific date
-export const updateStreakCompletion = async (streakId, date, completed, note = '') => {
-  const streakRef = doc(db, STREAKS_COLLECTION, streakId);
-  const completionKey = `completions.${date}`;
-
-  await updateDoc(streakRef, {
-    [completionKey]: {
-      completed,
-      note,
-      timestamp: serverTimestamp()
-    }
-  });
-};
-
-// Update several dates' completions in one write.
-// updates: { 'YYYY-MM-DD': { completed, note } }
+// Write individual fields of each day's completion, leaving the others
+// (note, count, completed) untouched.
+// updates: { 'YYYY-MM-DD': { completed?, note?, count? } }
 export const updateStreakCompletions = async (streakId, updates) => {
   const streakRef = doc(db, STREAKS_COLLECTION, streakId);
   const fields = {};
-  for (const [date, { completed, note = '' }] of Object.entries(updates)) {
-    fields[`completions.${date}`] = { completed, note, timestamp: serverTimestamp() };
+  for (const [date, values] of Object.entries(updates)) {
+    for (const [key, value] of Object.entries(values)) {
+      fields[`completions.${date}.${key}`] = value;
+    }
+    fields[`completions.${date}.timestamp`] = serverTimestamp();
   }
   await updateDoc(streakRef, fields);
 };
 
-// Update streak name
-export const updateStreakName = async (streakId, newName) => {
+export const updateStreakCompletion = (streakId, date, values) =>
+  updateStreakCompletions(streakId, { [date]: values });
+
+// Add delta to a counted streak's day. Uses an atomic increment so taps from
+// two devices (or quick double taps) aren't lost. `completed` mirrors
+// count >= goal for exports; the app itself reads the count.
+export const incrementStreakCount = async (streakId, date, delta, completion, goal) => {
   const streakRef = doc(db, STREAKS_COLLECTION, streakId);
-  await updateDoc(streakRef, { name: newName });
+  const newCount = Math.max(0, countOf(completion) + delta);
+  // A day with `completed` but no count yet must be set explicitly, since
+  // incrementing a missing field would start from 0, not from 1.
+  const legacy = completion && typeof completion.count !== 'number';
+  await updateDoc(streakRef, {
+    [`completions.${date}.count`]: legacy ? newCount : increment(delta),
+    [`completions.${date}.completed`]: newCount >= goal,
+    [`completions.${date}.timestamp`]: serverTimestamp(),
+  });
+};
+
+// Rename, and switch between once-a-day and counted (with a goal).
+// Rewrites each day so stored data stays consistent with the new settings:
+// - to counted: every day gets an explicit count (a done day becomes 1)
+// - goal change or back to once-a-day: `completed` = count reached the goal
+//   (when going back, the goal that was in effect)
+export const updateStreakSettings = async (streak, { name, multi, goal }) => {
+  const streakRef = doc(db, STREAKS_COLLECTION, streak.id);
+  const fields = { name, multi, goal };
+
+  if (multi || streak.multi) {
+    const doneAt = multi ? goal : Math.max(1, streak.goal || 1);
+    for (const [date, completion] of Object.entries(streak.completions || {})) {
+      const count = countOf(completion);
+      if (typeof completion.count !== 'number') fields[`completions.${date}.count`] = count;
+      fields[`completions.${date}.completed`] = count >= doneAt;
+    }
+  }
+  await updateDoc(streakRef, fields);
 };
 
 // Delete a streak

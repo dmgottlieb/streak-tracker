@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getCalendarDays, getMonthYear, formatDate, parseDate, getTodayString } from '../utils/dateUtils';
+import { goalOf, countOf, isDayDone, calculateStreak, computeStats } from '../utils/streakUtils';
 import { updateStreakCompletions } from '../services/streakService';
 
 // Always render 6 week rows so the grid height doesn't change between months.
@@ -17,12 +18,17 @@ export default function CalendarModal({ streak, onClose }) {
   const [selected, setSelected] = useState(() => new Set());
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
+  // null = untouched: the stepper shows the day's own count (one day) or the goal (several).
+  const [countEdit, setCountEdit] = useState(null);
   // Local completions state so the calendar updates immediately on edit
   const [completions, setCompletions] = useState(streak.completions || {});
 
   const weeks = padToSixWeeks(getCalendarDays(currentMonth));
   const today = getTodayString();
+  const goal = goalOf(streak);
+  const liveStreak = { ...streak, completions };
   const selectedDates = [...selected].sort();
+  const countDraft = countEdit ?? (selectedDates.length === 1 ? countOf(completions[selectedDates[0]]) : goal);
   const anyComplete = selectedDates.some(d => completions[d]?.completed);
   const anyIncomplete = selectedDates.some(d => !completions[d]?.completed);
 
@@ -33,10 +39,12 @@ export default function CalendarModal({ streak, onClose }) {
   const clearSelection = () => {
     setSelected(new Set());
     setEditingNote(false);
+    setCountEdit(null);
   };
 
   const toggleDay = (dateStr) => {
     setEditingNote(false);
+    setCountEdit(null);
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(dateStr)) next.delete(dateStr);
@@ -46,9 +54,14 @@ export default function CalendarModal({ streak, onClose }) {
   };
 
   // Apply updates locally right away, persist, and roll back on failure.
+  // updates: { date: { ...fields to change } }; other fields are kept.
   const save = async (updates) => {
     const previous = completions;
-    setCompletions(prev => ({ ...prev, ...updates }));
+    setCompletions(prev => {
+      const next = { ...prev };
+      for (const [d, values] of Object.entries(updates)) next[d] = { ...prev[d], ...values };
+      return next;
+    });
     clearSelection();
     try {
       await updateStreakCompletions(streak.id, updates);
@@ -62,7 +75,15 @@ export default function CalendarModal({ streak, onClose }) {
   const markSelected = (completed) => {
     const updates = {};
     for (const d of selectedDates) {
-      updates[d] = { completed, note: completions[d]?.note || '' };
+      updates[d] = { completed };
+    }
+    save(updates);
+  };
+
+  const setSelectedCounts = () => {
+    const updates = {};
+    for (const d of selectedDates) {
+      updates[d] = { count: countDraft, completed: countDraft >= goal };
     }
     save(updates);
   };
@@ -74,7 +95,7 @@ export default function CalendarModal({ streak, onClose }) {
 
   const saveNote = () => {
     const d = selectedDates[0];
-    save({ [d]: { completed: !!completions[d]?.completed, note: noteDraft.trim() } });
+    save({ [d]: { note: noteDraft.trim() } });
   };
 
   const renderDay = (date, key) => {
@@ -83,9 +104,13 @@ export default function CalendarModal({ streak, onClose }) {
     const dateStr = formatDate(date);
     const completion = completions[dateStr];
     const isBeforeStart = dateStr < streak.startDate;
+    const done = isDayDone(streak, completion);
+    const count = countOf(completion);
 
     let className = 'calendar-day';
-    if (completion?.completed) className += ' completed';
+    if (done) className += ' completed';
+    if (streak.multi && !done && count > 0) className += ' partial';
+    if (streak.multi && count > goal) className += ' extra';
     if (dateStr === today) className += ' today';
     if (isBeforeStart) className += ' disabled';
     if (selected.has(dateStr)) className += ' selected';
@@ -98,8 +123,34 @@ export default function CalendarModal({ streak, onClose }) {
         title={completion?.note || ''}
       >
         <span className="day-number">{date.getDate()}</span>
-        {completion?.completed && <span className="check-mark">✓</span>}
+        {streak.multi
+          ? count > 0 && <span className="day-count">×{count}</span>
+          : done && <span className="check-mark">✓</span>}
         {completion?.note && <span className="note-indicator">📝</span>}
+      </div>
+    );
+  };
+
+  // Shown in the action bar while no days are selected.
+  const renderStats = () => {
+    const stats = computeStats(liveStreak);
+    const current = calculateStreak(liveStreak);
+    return (
+      <div className="stats">
+        <p className="stats-line">
+          <strong>{stats.total}</strong> {streak.multi ? 'total' : 'days done'}
+          {' · '}Current <strong>{current}d</strong>
+          {' · '}Best <strong>{stats.longest}d</strong>
+        </p>
+        {streak.multi && stats.thresholds.length > 0 && (
+          <p className="stats-line secondary">
+            Longest at{' '}
+            {stats.thresholds.map(({ k, days }, i) => (
+              <span key={k}>{i > 0 && ' · '}≥{k} <strong>{days}d</strong></span>
+            ))}
+          </p>
+        )}
+        <p className="action-status hint">Tap days to select and edit them.</p>
       </div>
     );
   };
@@ -125,13 +176,7 @@ export default function CalendarModal({ streak, onClose }) {
       );
     }
 
-    if (selectedDates.length === 0) {
-      return (
-        <p className="action-status hint">
-          Tap days to select them, then mark them complete or incomplete.
-        </p>
-      );
-    }
+    if (selectedDates.length === 0) return renderStats();
 
     const single = selectedDates.length === 1;
     const note = single ? completions[selectedDates[0]]?.note : '';
@@ -139,22 +184,35 @@ export default function CalendarModal({ streak, onClose }) {
       <>
         <p className="action-status">
           <strong>{single ? shortDate(selectedDates[0]) : `${selectedDates.length} days selected`}</strong>
+          {streak.multi && single && (
+            <span className="action-note"> — {countOf(completions[selectedDates[0]])}/{goal}</span>
+          )}
           {note && <span className="action-note"> — {note}</span>}
         </p>
         <div className="action-buttons">
-          {anyIncomplete && (
+          {streak.multi && (
+            <>
+              <div className="stepper">
+                <button onClick={() => setCountEdit(Math.max(0, countDraft - 1))} disabled={countDraft === 0} aria-label="One fewer">−</button>
+                <span className="stepper-value">{countDraft}</span>
+                <button onClick={() => setCountEdit(Math.min(99, countDraft + 1))} aria-label="One more">+</button>
+              </div>
+              <button onClick={setSelectedCounts} className="btn btn-primary">Set</button>
+            </>
+          )}
+          {!streak.multi && anyIncomplete && (
             <button onClick={() => markSelected(true)} className="btn btn-primary">
               ✓ {anyComplete ? 'All complete' : 'Complete'}
             </button>
           )}
-          {anyComplete && (
+          {!streak.multi && anyComplete && (
             <button onClick={() => markSelected(false)} className="btn btn-secondary">
               ✗ {anyIncomplete ? 'All incomplete' : 'Incomplete'}
             </button>
           )}
           {single && (
-            <button onClick={startNote} className="btn btn-secondary">
-              📝 Note
+            <button onClick={startNote} className="btn btn-secondary" aria-label="Note">
+              {streak.multi ? '📝' : '📝 Note'}
             </button>
           )}
           <button onClick={clearSelection} className="btn btn-secondary">Clear</button>
